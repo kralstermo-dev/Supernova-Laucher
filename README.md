@@ -11,21 +11,21 @@ Work in progress
 - Mod browser using Modrinth's API
 - Automatic redaction of sensitive information (i.e. access tokens) in logs
 - Unique approach to modpack management (https://youtu.be/cdRVqd7b2BQ)
-- Fully Customizable Colours
+- Fully customizable colours
 - Logs get automaticly uploaded to mclo.gs
-- And More!
+- And more!
 
 ## FAQ
 
 ### Where can I suggest a feature/report a bug?
 
-Please use GitHub issues.
+Use GitHub issues.
 or you can do it in our discord:
 https://discord.gg/CngWzd4bKh
 
 ### Why should I use Supernova over other launchers?
 
-I don't know use whatever laucher you want but we have some nice features
+I don't know use whatever laucher you want but Supernova has some nice features
 
 ### Will Supernova be monetized?
 
