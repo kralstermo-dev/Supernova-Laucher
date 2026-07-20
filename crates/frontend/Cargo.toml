@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 t.workspace = true
+regex.workspace = true
 chrono.workspace = true
 ftree.workspace = true
 gpui.workspace = true
