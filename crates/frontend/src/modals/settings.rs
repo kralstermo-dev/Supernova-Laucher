@@ -6,13 +6,14 @@ use gpui_component::{
     IndexPath,
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
+    color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState},
     h_flex,
     input::{Input, InputEvent, InputState, NumberInput},
     select::{SearchableVec, Select, SelectEvent, SelectState},
     sheet::Sheet,
     spinner::Spinner,
     tab::{Tab, TabBar},
-    v_flex, ActiveTheme, Disableable, Sizable, ThemeRegistry,
+    v_flex, ActiveTheme, Colorize, Disableable, Sizable, ThemeRegistry,
 };
 use schema::backend_config::{BackendConfig, ProxyConfig, ProxyProtocol};
 
@@ -30,11 +31,117 @@ enum SettingsTab {
     Network,
 }
 
+/// Renders a labeled row containing a color-picker swatch and its paired hex text box.
+fn color_slot_row(
+    label: &'static str,
+    picker: &Entity<ColorPickerState>,
+    hex_input: &Entity<InputState>,
+) -> impl IntoElement {
+    crate::labelled(
+        label,
+        h_flex()
+            .gap_2()
+            .items_center()
+            .child(ColorPicker::new(picker))
+            .child(Input::new(hex_input).w_24()),
+    )
+}
+
+/// Creates a paired swatch color-picker + typeable hex text box, both starting
+/// from `initial_hex` (if it parses; otherwise left at the picker/input's own default).
+fn build_color_slot(
+    initial_hex: &SharedString,
+    window: &mut Window,
+    cx: &mut Context<Settings>,
+) -> (Entity<ColorPickerState>, Entity<InputState>) {
+    let trimmed = initial_hex.trim_ascii().to_string();
+
+    let picker = cx.new(|cx| {
+        let mut state = ColorPickerState::new(window, cx);
+        if let Ok(color) = gpui::Hsla::parse_hex(&trimmed) {
+            state = state.default_value(color);
+        }
+        state
+    });
+
+    let hex_input = cx.new(|cx| {
+        let mut input = InputState::new(window, cx)
+            .pattern(regex::Regex::new(r"^#[0-9a-fA-F]{0,8}$").unwrap())
+            .placeholder("#rrggbb");
+        if !trimmed.is_empty() {
+            input = input.default_value(trimmed.clone());
+        }
+        input
+    });
+
+    (picker, hex_input)
+}
+
+/// Wires a swatch/hex-input pair together (each stays in sync with the other),
+/// and on any valid change: saves the hex into `InterfaceConfig` via `setter`,
+/// then recomputes the full custom color set.
+fn wire_color_slot(
+    picker: &Entity<ColorPickerState>,
+    hex_input: &Entity<InputState>,
+    window: &mut Window,
+    cx: &mut Context<Settings>,
+    setter: fn(&mut InterfaceConfig, SharedString),
+) {
+    {
+        let hex_input = hex_input.clone();
+        cx.subscribe_in(picker, window, move |_, _, event: &ColorPickerEvent, window, cx| {
+            let ColorPickerEvent::Change(color) = event;
+            let Some(color) = color else { return };
+            let hex: SharedString = color.to_hex().into();
+            setter(InterfaceConfig::get_mut(cx), hex.clone());
+            crate::accent_color::reapply_custom_colors(cx);
+            hex_input.update(cx, |input, cx| {
+                input.set_value(hex.clone(), window, cx);
+            });
+        }).detach();
+    }
+
+    {
+        let picker = picker.clone();
+        cx.subscribe_in(hex_input, window, move |_, entity, event: &InputEvent, window, cx| {
+            if !matches!(event, InputEvent::Blur) {
+                return;
+            }
+            let value = entity.read(cx).value().trim().to_string();
+            let Ok(color) = gpui::Hsla::parse_hex(&value) else { return };
+            setter(InterfaceConfig::get_mut(cx), value.clone().into());
+            crate::accent_color::reapply_custom_colors(cx);
+            picker.update(cx, |state, cx| {
+                state.set_value(color, window, cx);
+            });
+        }).detach();
+    }
+}
+
 struct Settings {
     selected_tab: SettingsTab,
     language_select: Entity<SelectState<NamedDropdown<t::Language>>>,
     theme_folder: Arc<Path>,
     theme_select: Entity<SelectState<SearchableVec<SharedString>>>,
+    accent_color_picker: Entity<ColorPickerState>,
+    accent_hex_input: Entity<InputState>,
+    background_color_picker: Entity<ColorPickerState>,
+    background_hex_input: Entity<InputState>,
+    secondary_color_picker: Entity<ColorPickerState>,
+    secondary_hex_input: Entity<InputState>,
+    text_color_picker: Entity<ColorPickerState>,
+    text_hex_input: Entity<InputState>,
+    border_color_picker: Entity<ColorPickerState>,
+    border_hex_input: Entity<InputState>,
+    danger_color_picker: Entity<ColorPickerState>,
+    danger_hex_input: Entity<InputState>,
+    success_color_picker: Entity<ColorPickerState>,
+    success_hex_input: Entity<InputState>,
+    warning_color_picker: Entity<ColorPickerState>,
+    warning_hex_input: Entity<InputState>,
+    info_color_picker: Entity<ColorPickerState>,
+    info_hex_input: Entity<InputState>,
+    preset_name_input: Entity<InputState>,
     backend_handle: BackendHandle,
     pending_request: bool,
     backend_config: Option<BackendConfig>,
@@ -85,7 +192,66 @@ pub fn build_settings_sheet(data: &DataEntities, window: &mut Window, cx: &mut A
             };
 
             gpui_component::Theme::global_mut(cx).apply_config(&theme);
+            // Re-apply the custom accent color on top of the newly selected base theme,
+            // since apply_config fully recomputes the resolved colors from scratch.
+            crate::accent_color::reapply_custom_colors(cx);
         }).detach();
+
+        let (accent_color_picker, accent_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_accent_color.clone(), window, cx);
+        wire_color_slot(&accent_color_picker, &accent_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_accent_color = hex;
+        });
+
+        let (background_color_picker, background_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_background_color.clone(), window, cx);
+        wire_color_slot(&background_color_picker, &background_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_background_color = hex;
+        });
+
+        let (secondary_color_picker, secondary_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_secondary_color.clone(), window, cx);
+        wire_color_slot(&secondary_color_picker, &secondary_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_secondary_color = hex;
+        });
+
+        let (text_color_picker, text_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_text_color.clone(), window, cx);
+        wire_color_slot(&text_color_picker, &text_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_text_color = hex;
+        });
+
+        let (border_color_picker, border_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_border_color.clone(), window, cx);
+        wire_color_slot(&border_color_picker, &border_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_border_color = hex;
+        });
+
+        let (danger_color_picker, danger_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_danger_color.clone(), window, cx);
+        wire_color_slot(&danger_color_picker, &danger_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_danger_color = hex;
+        });
+
+        let (success_color_picker, success_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_success_color.clone(), window, cx);
+        wire_color_slot(&success_color_picker, &success_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_success_color = hex;
+        });
+
+        let (warning_color_picker, warning_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_warning_color.clone(), window, cx);
+        wire_color_slot(&warning_color_picker, &warning_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_warning_color = hex;
+        });
+
+        let (info_color_picker, info_hex_input) =
+            build_color_slot(&InterfaceConfig::get(cx).custom_info_color.clone(), window, cx);
+        wire_color_slot(&info_color_picker, &info_hex_input, window, cx, |cfg, hex| {
+            cfg.custom_info_color = hex;
+        });
+
+        let preset_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Preset name"));
 
         let proxy_protocol_select = cx.new(|cx| {
             let protocols = vec!["HTTP", "HTTPS", "SOCKS5"];
@@ -108,6 +274,25 @@ pub fn build_settings_sheet(data: &DataEntities, window: &mut Window, cx: &mut A
             language_select,
             theme_folder,
             theme_select,
+            accent_color_picker,
+            accent_hex_input,
+            background_color_picker,
+            background_hex_input,
+            secondary_color_picker,
+            secondary_hex_input,
+            text_color_picker,
+            text_hex_input,
+            border_color_picker,
+            border_hex_input,
+            danger_color_picker,
+            danger_hex_input,
+            success_color_picker,
+            success_hex_input,
+            warning_color_picker,
+            warning_hex_input,
+            info_color_picker,
+            info_hex_input,
+            preset_name_input,
             backend_handle: data.backend_handle.clone(),
             pending_request: false,
             backend_config: None,
@@ -162,6 +347,32 @@ pub fn build_settings_sheet(data: &DataEntities, window: &mut Window, cx: &mut A
 }
 
 impl Settings {
+    /// Refreshes every color swatch + hex input to reflect whatever the theme
+    /// engine actually resolved (post reapply/preset-load/reset), so the UI
+    /// never shows a stale value.
+    fn sync_all_color_widgets(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let colors = cx.theme().colors;
+        let widgets: [(&Entity<ColorPickerState>, &Entity<InputState>, Hsla); 9] = [
+            (&self.accent_color_picker, &self.accent_hex_input, colors.primary),
+            (&self.background_color_picker, &self.background_hex_input, colors.background),
+            (&self.secondary_color_picker, &self.secondary_hex_input, colors.secondary),
+            (&self.text_color_picker, &self.text_hex_input, colors.foreground),
+            (&self.border_color_picker, &self.border_hex_input, colors.border),
+            (&self.danger_color_picker, &self.danger_hex_input, colors.danger),
+            (&self.success_color_picker, &self.success_hex_input, colors.success),
+            (&self.warning_color_picker, &self.warning_hex_input, colors.warning),
+            (&self.info_color_picker, &self.info_hex_input, colors.info),
+        ];
+        for (picker, hex_input, color) in widgets {
+            picker.update(cx, |state, cx| {
+                state.set_value(color, window, cx);
+            });
+            hex_input.update(cx, |input, cx| {
+                input.set_value(color.to_hex(), window, cx);
+            });
+        }
+    }
+
     pub fn update_backend_configuration(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.get_configuration_task.is_some() {
             self.pending_request = true;
@@ -354,6 +565,113 @@ impl Settings {
                     cx.open_url("https://github.com/longbridge/gpui-component/tree/main/themes");
                 }
             }))
+            .child(crate::labelled(
+                "Custom Colors",
+                v_flex()
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .gap_3()
+                            .flex_wrap()
+                            .child(color_slot_row("Accent", &self.accent_color_picker, &self.accent_hex_input))
+                            .child(color_slot_row("Background", &self.background_color_picker, &self.background_hex_input))
+                            .child(color_slot_row("Secondary", &self.secondary_color_picker, &self.secondary_hex_input))
+                            .child(color_slot_row("Text", &self.text_color_picker, &self.text_hex_input))
+                            .child(color_slot_row("Border", &self.border_color_picker, &self.border_hex_input)),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_3()
+                            .flex_wrap()
+                            .child(color_slot_row("Danger", &self.danger_color_picker, &self.danger_hex_input))
+                            .child(color_slot_row("Success", &self.success_color_picker, &self.success_hex_input))
+                            .child(color_slot_row("Warning", &self.warning_color_picker, &self.warning_hex_input))
+                            .child(color_slot_row("Info", &self.info_color_picker, &self.info_hex_input)),
+                    )
+                    .child(Button::new("reset-custom-colors").info().icon(PandoraIcon::CircleX).label("Reset All").on_click(
+                        cx.listener(|settings, _, window, cx| {
+                            let cfg = InterfaceConfig::get_mut(cx);
+                            cfg.custom_accent_color = SharedString::default();
+                            cfg.custom_background_color = SharedString::default();
+                            cfg.custom_secondary_color = SharedString::default();
+                            cfg.custom_text_color = SharedString::default();
+                            cfg.custom_border_color = SharedString::default();
+                            cfg.custom_danger_color = SharedString::default();
+                            cfg.custom_success_color = SharedString::default();
+                            cfg.custom_warning_color = SharedString::default();
+                            cfg.custom_info_color = SharedString::default();
+
+                            let theme_name = InterfaceConfig::get(cx).active_theme.clone();
+                            if let Some(theme) = gpui_component::ThemeRegistry::global(cx)
+                                .themes()
+                                .get(&SharedString::new(theme_name.trim_ascii()))
+                                .cloned()
+                            {
+                                gpui_component::Theme::global_mut(cx).apply_config(&theme);
+                            }
+
+                            settings.sync_all_color_widgets(window, cx);
+                        }),
+                    )),
+            ))
+            .child(crate::labelled(
+                "Color Presets",
+                v_flex()
+                    .gap_2()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(Input::new(&self.preset_name_input).w_48())
+                            .child(Button::new("save-preset").info().icon(PandoraIcon::Plus).label("Save Preset").on_click(
+                                cx.listener(|settings, _, window, cx| {
+                                    let name = settings.preset_name_input.read(cx).value().trim().to_string();
+                                    if name.is_empty() {
+                                        return;
+                                    }
+                                    let preset = crate::accent_color::capture_preset(name.into(), cx);
+                                    InterfaceConfig::get_mut(cx).color_presets.push(preset);
+                                    settings.preset_name_input.update(cx, |input, cx| {
+                                        input.set_value("", window, cx);
+                                    });
+                                    cx.notify();
+                                }),
+                            )),
+                    )
+                    .children({
+                        let presets: Vec<(usize, SharedString)> = InterfaceConfig::get(cx)
+                            .color_presets
+                            .iter()
+                            .enumerate()
+                            .map(|(index, preset)| (index, preset.name.clone()))
+                            .collect();
+
+                        presets.into_iter().map(|(index, name)| {
+                            h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(div().text_sm().flex_1().child(name))
+                                .child(Button::new(("load-preset", index)).info().small().label("Load").on_click(
+                                    cx.listener(move |settings, _, window, cx| {
+                                        let Some(preset) = InterfaceConfig::get(cx).color_presets.get(index).cloned() else {
+                                            return;
+                                        };
+                                        crate::accent_color::apply_preset(&preset, cx);
+                                        settings.sync_all_color_widgets(window, cx);
+                                    }),
+                                ))
+                                .child(Button::new(("delete-preset", index)).danger().small().icon(PandoraIcon::Trash2).on_click(
+                                    cx.listener(move |_, _, _, cx| {
+                                        let presets = &mut InterfaceConfig::get_mut(cx).color_presets;
+                                        if index < presets.len() {
+                                            presets.remove(index);
+                                        }
+                                        cx.notify();
+                                    }),
+                                ))
+                        }).collect::<Vec<_>>()
+                    }),
+            ))
             .child(crate::labelled(t::settings::delete::title(),
                 v_flex().gap_2()
                     .child(Checkbox::new("confirm-delete-mods")
@@ -404,6 +722,12 @@ impl Settings {
                             .checked(interface_config.use_os_titlebar)
                             .on_click(|value, _, cx| {
                                 InterfaceConfig::get_mut(cx).use_os_titlebar = *value;
+                            }))
+                        .child(Checkbox::new("auto-upload-mclogs")
+                            .label("Automatically upload log to mclo.gs when a game session ends")
+                            .checked(interface_config.auto_upload_mclogs_on_exit)
+                            .on_click(|value, _, cx| {
+                                InterfaceConfig::get_mut(cx).auto_upload_mclogs_on_exit = *value;
                             }))
                 ))
         } else {
