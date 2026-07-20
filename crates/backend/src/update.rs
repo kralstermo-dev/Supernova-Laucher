@@ -39,13 +39,13 @@ pub async fn check_for_updates(http_client: reqwest::Client, send: FrontendHandl
         Ok(response) => response,
         Err(err) => {
             log::error!("Error while requesting update manifest: {}", err);
-            send.send_error("Unable to fetch Pandora update manifest, see logs for more details");
+            send.send_error("Unable to fetch Supernova update manifest, see logs for more details");
             return;
         },
     };
 
     if response.status() != StatusCode::OK {
-        send.send_error(format!("Unable to fetch Pandora update manifest, non-200 status code: {}", response.status()));
+        send.send_error(format!("Unable to fetch Supernova update manifest, non-200 status code: {}", response.status()));
         return;
     }
 
@@ -53,7 +53,7 @@ pub async fn check_for_updates(http_client: reqwest::Client, send: FrontendHandl
         Ok(manifest_bytes) => manifest_bytes,
         Err(err) => {
             log::error!("Error while downloading update manifest: {}", err);
-            send.send_error("Unable to download Pandora update manifest, see logs for more details");
+            send.send_error("Unable to download Supernova update manifest, see logs for more details");
             return;
         },
     };
@@ -150,7 +150,7 @@ pub async fn install_update(http_client: reqwest::Client, dirs: Arc<LauncherDire
 }
 
 async fn install_update_inner(http_client: reqwest::Client, dirs: &LauncherDirectories, send: FrontendHandle, update: UpdatePrompt, modal_action: ModalAction) -> Result<(), Arc<str>> {
-    let title = format!("Downloading Pandora {}", update.new_version);
+    let title = format!("Downloading Supernova {}", update.new_version);
     let tracker = ProgressTracker::new(title.into(), send.clone());
     modal_action.trackers.push(tracker.clone());
 
@@ -266,7 +266,7 @@ async fn install_update_inner(http_client: reqwest::Client, dirs: &LauncherDirec
         },
     }
 
-    send.send_success("Pandora update successful. Restart to apply changes");
+    send.send_success("Supernova update successful. Restart to apply changes");
 
     Ok(())
 }
