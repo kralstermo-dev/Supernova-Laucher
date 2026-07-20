@@ -3,7 +3,7 @@ use std::{cell::RefCell, num::NonZeroUsize, ops::Range, rc::Rc, sync::Arc};
 use ftree::FenwickTree;
 use gpui::{prelude::*, *};
 use gpui_component::{
-    button::Button, h_flex, input::{Input, InputEvent, InputState}, scroll::{Scrollbar, ScrollbarHandle}, v_flex, ActiveTheme as _, Icon, Sizable
+    button::{Button, ButtonVariants}, h_flex, input::{Input, InputEvent, InputState}, scroll::{Scrollbar, ScrollbarHandle}, v_flex, ActiveTheme as _, Disableable, Icon, Sizable
 };
 use lru::LruCache;
 use rustc_hash::FxBuildHasher;
@@ -38,6 +38,13 @@ pub struct GameOutputItemState {
     search_query: SharedString,
 }
 
+#[derive(Clone)]
+pub enum UploadState {
+    Idle,
+    Uploading,
+    Done(crate::mclogs::MclogsResult),
+}
+
 pub struct GameOutput {
     font: Font,
     scroll_state: Rc<RefCell<GameOutputScrollState>>,
@@ -47,6 +54,8 @@ pub struct GameOutput {
     level_column_width: Pixels,
     shaped_log_levels: Option<CachedShapedLogLevels>,
     _receive_lines_task: Task<()>,
+    full_log: String,
+    upload_state: UploadState,
 }
 
 impl GameOutput {
@@ -57,12 +66,26 @@ impl GameOutput {
         let task = cx.spawn(async move |output, cx| {
             loop {
                 let Some(msg) = receiver.recv().await else {
+                    // Channel closed: the game process has exited. Kick off an
+                    // automatic upload if the user has opted into that.
+                    _ = output.update(cx, |output, cx| {
+                        output.maybe_auto_upload(cx);
+                    });
                     return;
                 };
                 _ = output.update(cx, |output, cx| {
+                    for line in msg.text.iter() {
+                        output.full_log.push_str(line.as_ref());
+                        output.full_log.push('\n');
+                    }
+
                     output.pending.push(msg);
 
                     while let Ok(msg) = receiver.try_recv() {
+                        for line in msg.text.iter() {
+                            output.full_log.push_str(line.as_ref());
+                            output.full_log.push('\n');
+                        }
                         output.pending.push(msg);
                     }
 
@@ -97,7 +120,37 @@ impl GameOutput {
             level_column_width: Default::default(),
             shaped_log_levels: None,
             _receive_lines_task: task,
+            full_log: String::new(),
+            upload_state: UploadState::Idle,
         }
+    }
+
+    fn maybe_auto_upload(&mut self, cx: &mut Context<Self>) {
+        if !crate::interface_config::InterfaceConfig::get(cx).auto_upload_mclogs_on_exit {
+            return;
+        }
+        self.start_upload(cx);
+    }
+
+    /// Kicks off (or restarts) an mclo.gs upload of everything logged so far.
+    pub fn start_upload(&mut self, cx: &mut Context<Self>) {
+        if self.full_log.trim().is_empty() {
+            return;
+        }
+
+        self.upload_state = UploadState::Uploading;
+        cx.notify();
+
+        let content = self.full_log.clone();
+        let client = cx.http_client();
+
+        cx.spawn(async move |this, cx| {
+            let result = crate::mclogs::upload_log(client, content).await;
+            _ = this.update(cx, |output, cx| {
+                output.upload_state = UploadState::Done(result);
+                cx.notify();
+            });
+        }).detach();
     }
 
     fn shape_log_level(
@@ -1069,6 +1122,49 @@ impl Render for GameOutputRoot {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let search = Input::new(&self.search_state).prefix(Icon::new(PandoraIcon::Search).small());
 
+        let upload_state = self.game_output.read(cx).upload_state.clone();
+        let upload_element: AnyElement = match upload_state {
+            UploadState::Idle => Button::new("upload-mclogs")
+                .icon(PandoraIcon::Link)
+                .label("Upload to mclo.gs")
+                .on_click(cx.listener(|root, _, _, cx| {
+                    root.game_output.update(cx, |output, cx| output.start_upload(cx));
+                }))
+                .into_any_element(),
+            UploadState::Uploading => Button::new("upload-mclogs")
+                .label("Uploading...")
+                .disabled(true)
+                .into_any_element(),
+            UploadState::Done(crate::mclogs::MclogsResult::Success { url }) => h_flex()
+                .gap_2()
+                .items_center()
+                .child(
+                    Button::new("open-mclogs-link")
+                        .info()
+                        .icon(PandoraIcon::ExternalLink)
+                        .label(url.clone())
+                        .on_click(move |_, _, cx| {
+                            cx.open_url(&url);
+                        }),
+                )
+                .child(Button::new("reupload-mclogs").ghost().small().icon(PandoraIcon::Link).on_click(cx.listener(
+                    |root, _, _, cx| {
+                        root.game_output.update(cx, |output, cx| output.start_upload(cx));
+                    },
+                )))
+                .into_any_element(),
+            UploadState::Done(crate::mclogs::MclogsResult::Failure { message }) => h_flex()
+                .gap_2()
+                .items_center()
+                .child(div().text_color(cx.theme().danger).child(SharedString::from(format!("Upload failed: {message}"))))
+                .child(Button::new("retry-mclogs").warning().small().label("Retry").on_click(cx.listener(
+                    |root, _, _, cx| {
+                        root.game_output.update(cx, |output, cx| output.start_upload(cx));
+                    },
+                )))
+                .into_any_element(),
+        };
+
         let bar = h_flex()
             .w_full()
             .rounded(cx.theme().radius)
@@ -1076,6 +1172,7 @@ impl Render for GameOutputRoot {
             .flex_1()
             .gap_4()
             .child(search)
+            .child(upload_element)
             .child(Button::new("top").label(t::common::nav::top()).on_click(cx.listener(|root, _, _, cx| {
                 let mut state = root.scroll_handler.state.borrow_mut();
                 state.scrolling = GameOutputScrolling::Top { offset: Pixels::ZERO };
