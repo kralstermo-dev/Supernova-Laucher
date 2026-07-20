@@ -12,7 +12,7 @@ use gpui_component::{
 };
 
 use crate::{
-    entity::instance::InstanceEntry, icon::PandoraIcon, interface_config::InterfaceConfig, png_render_cache, root,
+    entity::instance::InstanceEntry, icon::PandoraIcon, interface_config::{InterfaceConfig, QuickPlayEntry, QuickPlayKind}, png_render_cache, recent_plays, root,
 };
 
 pub struct InstanceQuickplaySubpage {
@@ -251,12 +251,25 @@ impl ListDelegate for WorldsListDelegate {
         let name = self.name.clone();
         let backend_handle = self.backend_handle.clone();
         let target = summary.level_path.file_name().unwrap().to_owned();
+
+        let play_entry = QuickPlayEntry {
+            instance_name: name.clone(),
+            kind: QuickPlayKind::World,
+            title: summary.title.to_string().into(),
+            subtitle: summary.subtitle.to_string().into(),
+            target: target.to_string_lossy().to_string().into(),
+            last_played: 0,
+        };
+        let pinned = recent_plays::is_pinned(&name, QuickPlayKind::World, play_entry.target.as_ref(), cx);
+        let pin_entry = play_entry.clone();
+
         let item = ListItem::new(ix).p_1().child(
             h_flex()
                 .gap_1()
                 .child(
                     div()
                         .child(Button::new(ix).success().icon(PandoraIcon::Play).on_click(move |_, window, cx| {
+                            recent_plays::record_entry_played(play_entry.clone(), cx);
                             root::start_instance(
                                 id,
                                 name.clone(),
@@ -266,6 +279,18 @@ impl ListDelegate for WorldsListDelegate {
                                 cx,
                             );
                         }))
+                        .px_2(),
+                )
+                .child(
+                    div()
+                        .child(
+                            Button::new(("pin-world", ix.row))
+                                .ghost()
+                                .icon(if pinned { PandoraIcon::StarOff } else { PandoraIcon::Star })
+                                .on_click(move |_, _, cx| {
+                                    recent_plays::toggle_pin(pin_entry.clone(), cx);
+                                }),
+                        )
                         .px_2(),
                 )
                 .child(icon.size_16().min_w_16().min_h_16())
@@ -393,6 +418,17 @@ impl ListDelegate for ServersListDelegate {
         let target = OsString::from(summary.ip.to_string());
         let row_index = ix.row;
 
+        let play_entry = QuickPlayEntry {
+            instance_name: name.clone(),
+            kind: QuickPlayKind::Server,
+            title: summary.name.to_string().into(),
+            subtitle: summary.ip.to_string().into(),
+            target: summary.ip.to_string().into(),
+            last_played: 0,
+        };
+        let pinned = recent_plays::is_pinned(&name, QuickPlayKind::Server, play_entry.target.as_ref(), cx);
+        let pin_entry = play_entry.clone();
+
         let move_up = Button::new(("server-up", row_index))
             .compact()
             .small()
@@ -427,6 +463,7 @@ impl ListDelegate for ServersListDelegate {
                     .child(
                         div()
                             .child(Button::new(ix).success().icon(PandoraIcon::Play).on_click(move |_, window, cx| {
+                                recent_plays::record_entry_played(play_entry.clone(), cx);
                                 root::start_instance(
                                     id,
                                     name.clone(),
@@ -436,6 +473,18 @@ impl ListDelegate for ServersListDelegate {
                                     cx,
                                 );
                             }))
+                            .px_2(),
+                    )
+                    .child(
+                        div()
+                            .child(
+                                Button::new(("pin-server", row_index))
+                                    .ghost()
+                                    .icon(if pinned { PandoraIcon::StarOff } else { PandoraIcon::Star })
+                                    .on_click(move |_, _, cx| {
+                                        recent_plays::toggle_pin(pin_entry.clone(), cx);
+                                    }),
+                            )
                             .px_2(),
                     )
                     .child(icon.size_16().min_w_16().min_h_16())
