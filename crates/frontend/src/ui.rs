@@ -3,7 +3,7 @@ use std::{collections::VecDeque, sync::Arc};
 use bridge::instance::InstanceID;
 use gpui::{prelude::*, *};
 use gpui_component::{
-    ActiveTheme as _, Icon, InteractiveElementExt, WindowExt, h_flex, notification::{Notification, NotificationType}, scroll::ScrollableElement, tooltip::Tooltip, v_flex
+    ActiveTheme as _, Icon, InteractiveElementExt, WindowExt, h_flex, scroll::ScrollableElement, tooltip::Tooltip, v_flex
 };
 use rustc_hash::FxHashMap;
 use schema::pandora_update::UpdatePrompt;
@@ -550,7 +550,7 @@ impl Render for LauncherUI {
                     open_bug_report_url(window, cx);
                 }
             });
-        let discord_invite = option_env!("DISCORD_INVITE").unwrap_or("https://pandora.moulberry.com/discord");
+        let discord_invite = option_env!("DISCORD_INVITE").unwrap_or("https://discord.gg/CngWzd4bKh");
         let discord_button = div()
             .id("discord-button")
             .p_2()
@@ -568,6 +568,23 @@ impl Render for LauncherUI {
                     cx.open_url(discord_invite);
                 }
             });
+        let original_pandora_button = div()
+            .id("original-pandora-button")
+            .p_2()
+            .rounded(cx.theme().radius)
+            .hover(|this| {
+                this.bg(cx.theme().sidebar_accent)
+                    .text_color(cx.theme().sidebar_accent_foreground)
+            })
+            .child(PandoraIcon::Pandora)
+            .tooltip(move |window, cx| {
+                Tooltip::new("Original Pandora Launcher").build(window, cx)
+            })
+            .on_click({
+                move |_, _, cx| {
+                    cx.open_url("https://github.com/Moulberry/PandoraLauncher");
+                }
+            });
 
         let header = h_flex()
             .when_else(cfg!(target_os = "macos"), |this| this.pt(px(9.0)), |this| this.pt(px(14.0)))
@@ -577,12 +594,13 @@ impl Render for LauncherUI {
             .w_full()
             .justify_center()
             .text_size(rems(0.9375))
-            .child(Icon::new(PandoraIcon::Pandora).size_8().min_w_8().min_h_8())
+            .child(Icon::new(PandoraIcon::Supernova).size_8().min_w_8().min_h_8())
             .child(t::common::app_name());
         let footer_buttons = h_flex()
             .child(settings_button)
             .child(bug_report_button)
-            .when(!discord_invite.is_empty(), |this| this.child(discord_button));
+            .when(!discord_invite.is_empty(), |this| this.child(discord_button))
+            .child(original_pandora_button);
         let footer = v_flex().pb_2().px_2().items_center().min_w_full().max_w_full().w_full().child(footer_buttons).child(account_button);
         let sidebar = v_flex()
             .size_full()
@@ -612,7 +630,7 @@ impl Render for LauncherUI {
     }
 }
 
-fn open_bug_report_url(window: &mut Window, cx: &mut App) {
+fn open_bug_report_url(_window: &mut Window, cx: &mut App) {
     let mut body = String::from(r#"## Description of bug
 (Write here)
 
@@ -655,12 +673,7 @@ fn open_bug_report_url(window: &mut Window, cx: &mut App) {
         }
     }
 
-    let Some(github) = option_env!("GITHUB_REPOSITORY_URL") else {
-        let mut notification: Notification = (NotificationType::Error, SharedString::from("Unable to report bug, GITHUB_REPOSITORY_URL was not set at compile time")).into();
-        notification = notification.autohide(false);
-        window.push_notification(notification, cx);
-        return;
-    };
+    let github = option_env!("GITHUB_REPOSITORY_URL").unwrap_or("https://github.com/kralstermo-dev/Supernova-Laucher");
 
     cx.open_url(&format!("{}/issues/new?body={}", github, urlencoding::encode(&body)));
 }

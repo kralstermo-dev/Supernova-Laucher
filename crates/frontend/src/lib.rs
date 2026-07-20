@@ -20,8 +20,11 @@ use crate::{
     }, interface_config::InterfaceConfig, processor::Processor, root::{LauncherRoot, LauncherRootGlobal}
 };
 
+pub mod accent_color;
 pub mod component;
 pub mod data_asset_loader;
+pub mod mclogs;
+pub mod recent_plays;
 pub mod entity;
 pub mod game_output;
 pub mod modals;
@@ -108,11 +111,14 @@ pub fn start(
             };
 
             gpui_component::Theme::global_mut(cx).apply_config(&theme);
+            crate::accent_color::reapply_custom_colors(cx);
         });
 
         let theme = gpui_component::Theme::global_mut(cx);
         theme.font_family = SharedString::new_static(MAIN_FONT);
         theme.scrollbar_show = gpui_component::scroll::ScrollbarShow::Always;
+
+        crate::accent_color::reapply_custom_colors(cx);
 
         cx.set_quit_mode(QuitMode::Explicit);
 
@@ -203,6 +209,10 @@ pub fn start(
 }
 
 pub fn open_main_window(data: &DataEntities, cx: &mut App) -> AnyWindowHandle {
+    // Make sure custom colors are baked into the global Theme before the window
+    // is created, so the very first frame paints with them already applied
+    // (rather than relying on the async themes-folder scan + a later repaint).
+    crate::accent_color::reapply_custom_colors(cx);
     let config = InterfaceConfig::get(cx);
 
     let window_bounds = match config.main_window_bounds {
@@ -225,7 +235,7 @@ pub fn open_main_window(data: &DataEntities, cx: &mut App) -> AnyWindowHandle {
             app_id: Some("PandoraLauncher".into()),
             window_min_size: Some(size(px(500.0), px(250.0))),
             titlebar: Some(TitlebarOptions {
-                title: Some("Pandora Launcher".into()),
+                title: Some("Supernova Launcher".into()),
                 appears_transparent: use_custom_titlebar,
                 ..Default::default()
             }),

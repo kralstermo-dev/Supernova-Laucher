@@ -8,6 +8,53 @@ use serde::{Deserialize, Serialize};
 
 use crate::{pages::instance::instance_page::InstanceSubpageType, ui::PageType};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum QuickPlayKind {
+    World,
+    Server,
+}
+
+/// A snapshot of a world or server, self-contained enough to display and relaunch
+/// without needing to re-fetch anything from the backend. Keyed for
+/// dedup/lookup by (instance_name, kind, target) — `instance_name` rather than
+/// `InstanceID` since instance IDs are per-session and not stable across restarts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuickPlayEntry {
+    pub instance_name: SharedString,
+    pub kind: QuickPlayKind,
+    pub title: SharedString,
+    pub subtitle: SharedString,
+    /// Level folder name (for worlds) or IP (for servers) — turned back into an
+    /// OsString and passed to `QuickPlayLaunch` at launch time.
+    pub target: SharedString,
+    /// Unix milliseconds, used to sort the recent list.
+    pub last_played: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ColorPreset {
+    #[serde(default)]
+    pub name: SharedString,
+    #[serde(default)]
+    pub accent: SharedString,
+    #[serde(default)]
+    pub background: SharedString,
+    #[serde(default)]
+    pub secondary: SharedString,
+    #[serde(default)]
+    pub text: SharedString,
+    #[serde(default)]
+    pub border: SharedString,
+    #[serde(default)]
+    pub danger: SharedString,
+    #[serde(default)]
+    pub success: SharedString,
+    #[serde(default)]
+    pub warning: SharedString,
+    #[serde(default)]
+    pub info: SharedString,
+}
+
 struct InterfaceConfigHolder {
     config: InterfaceConfig,
     write_task: Option<Task<()>>,
@@ -22,6 +69,38 @@ pub struct InterfaceConfig {
     pub language: t::Language,
     #[serde(default, deserialize_with = "schema::try_deserialize")]
     pub active_theme: SharedString,
+    /// Custom accent color hex (e.g. "#7c3aed"), overlaid on top of `active_theme`.
+    /// Empty means "no custom accent, use the theme's own colors".
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_accent_color: SharedString,
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_background_color: SharedString,
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_secondary_color: SharedString,
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_text_color: SharedString,
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_border_color: SharedString,
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_danger_color: SharedString,
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_success_color: SharedString,
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_warning_color: SharedString,
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub custom_info_color: SharedString,
+    /// Saved custom color presets, switchable from the Interface settings tab.
+    #[serde(default)]
+    pub color_presets: Vec<ColorPreset>,
+    /// Automatically upload the game log to mclo.gs whenever a game session ends.
+    #[serde(default, deserialize_with = "schema::try_deserialize")]
+    pub auto_upload_mclogs_on_exit: bool,
+    /// Worlds/servers pinned to the home screen, in display order.
+    #[serde(default)]
+    pub pinned_plays: Vec<QuickPlayEntry>,
+    /// Recently launched worlds/servers, most-recent-first, capped at 12.
+    #[serde(default)]
+    pub recent_plays: Vec<QuickPlayEntry>,
     #[serde(default, deserialize_with = "schema::try_deserialize")]
     pub main_window_bounds: WindowBounds,
     #[serde(default, deserialize_with = "schema::try_deserialize")]
@@ -142,6 +221,19 @@ impl Default for InterfaceConfig {
         Self {
             language: Default::default(),
             active_theme: Default::default(),
+            custom_accent_color: Default::default(),
+            custom_background_color: Default::default(),
+            custom_secondary_color: Default::default(),
+            custom_text_color: Default::default(),
+            custom_border_color: Default::default(),
+            custom_danger_color: Default::default(),
+            custom_success_color: Default::default(),
+            custom_warning_color: Default::default(),
+            custom_info_color: Default::default(),
+            color_presets: Vec::new(),
+            auto_upload_mclogs_on_exit: false,
+            pinned_plays: Vec::new(),
+            recent_plays: Vec::new(),
             main_window_bounds: Default::default(),
             sidebar_width: Default::default(),
             main_page: Default::default(),
