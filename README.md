@@ -1,7 +1,7 @@
 # Supernova Launcher
 
 Work in progress
-## FILES ARE NOT YET UPDATED
+## FILES ARE NOW UPDATED
 
 ## Features
 - Instance management
