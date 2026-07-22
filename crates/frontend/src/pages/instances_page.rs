@@ -6,7 +6,7 @@ use gpui_component::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    component::{instance_list::InstanceList, named_dropdown::{NamedDropdown, NamedDropdownItem}, responsive_grid::ResponsiveGrid}, entity::{DataEntities, instance::InstanceEntries, metadata::FrontendMetadata}, icon::PandoraIcon, interface_config::{InstancesViewMode, InterfaceConfig, QuickPlayEntry, QuickPlayKind}, pages::page::Page, recent_plays,
+    component::{instance_list::InstanceList, named_dropdown::{NamedDropdown, NamedDropdownItem}, responsive_grid::ResponsiveGrid}, entity::{DataEntities, instance::InstanceEntries, metadata::FrontendMetadata}, icon::PandoraIcon, interface_config::{InstancesViewMode, InterfaceConfig, QuickPlayEntry, QuickPlayKind}, pages::page::Page, png_render_cache, recent_plays,
 };
 
 pub struct InstancesPage {
@@ -46,15 +46,17 @@ impl InstancesPage {
         // timestamp from each world's save data, catching worlds launched any
         // way (not just via the Quickplay tab).
         let backend_handle = data.backend_handle.clone();
-        for entry in data.instances.read(cx).entries.values() {
-            let id = entry.read(cx).id;
-            let worlds_state = entry.read(cx).worlds_state.clone();
+        let instance_worlds: Vec<_> = data.instances.read(cx).entries.values().map(|entry| {
+            let entry = entry.read(cx);
+            (entry.id, entry.worlds_state.clone(), entry.worlds.clone())
+        }).collect();
+
+        for (id, worlds_state, worlds) in instance_worlds {
             worlds_state.set_observed();
             if worlds_state.should_load() {
                 backend_handle.send(MessageToBackend::RequestLoadWorlds { id });
             }
 
-            let worlds = entry.read(cx).worlds.clone();
             cx.observe(&worlds, |_, _, cx| cx.notify()).detach();
         }
 
