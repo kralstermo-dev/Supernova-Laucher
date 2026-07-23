@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     component::{menu::{MenuGroup, MenuGroupItem}, page_path::PagePath, resize_panel::{ResizePanel, ResizePanelState}, shrinking_text::ShrinkingText, title_bar::TitleBar}, entity::{
         DataEntities, account::AccountExt, instance::{InstanceAddedEvent, InstanceEntries, InstanceModifiedEvent, InstanceMovedToTopEvent, InstanceRemovedEvent}
-    }, icon::PandoraIcon, interface_config::InterfaceConfig, modals, pages::{curseforge_page::CurseforgeSearchPage, import::ImportPage, instance::instance_page::InstancePage, instances_page::InstancesPage, modrinth_page::ModrinthSearchPage, modrinth_project_page::ModrinthProjectPage, page::Page, skins_page::SkinsPage, syncing_page::SyncingPage}, png_render_cache,
+    }, icon::PandoraIcon, interface_config::InterfaceConfig, modals, pages::{combined_search_page::CombinedSearchPage, curseforge_page::CurseforgeSearchPage, import::ImportPage, instance::instance_page::InstancePage, instances_page::InstancesPage, modrinth_page::ModrinthSearchPage, modrinth_project_page::ModrinthProjectPage, page::Page, skins_page::SkinsPage, syncing_page::SyncingPage}, png_render_cache,
 };
 
 pub struct LauncherUI {
@@ -41,6 +41,9 @@ pub enum PageType {
         installing_for: Option<SharedString>,
     },
     Curseforge {
+        installing_for: Option<SharedString>,
+    },
+    CombinedBrowse {
         installing_for: Option<SharedString>,
     },
     Import,
@@ -74,6 +77,13 @@ impl PageType {
                     t::curseforge::name().into()
                 }
             },
+            PageType::CombinedBrowse { installing_for } => {
+                if installing_for.is_some() {
+                    "Install from Browse All".into()
+                } else {
+                    "Browse All".into()
+                }
+            },
             PageType::Import => t::import::label().into(),
             PageType::Syncing => t::instance::sync::label().into(),
             PageType::ModrinthProject { project_title, .. } => project_title.clone(),
@@ -91,6 +101,7 @@ pub enum LauncherPage {
     Skins(Entity<SkinsPage>),
     Modrinth(Entity<ModrinthSearchPage>),
     Curseforge(Entity<CurseforgeSearchPage>),
+    CombinedBrowse(Entity<CombinedSearchPage>),
     Import(Entity<ImportPage>),
     Syncing(Entity<SyncingPage>),
     ModrinthProject(Entity<ModrinthProjectPage>),
@@ -110,6 +121,7 @@ impl LauncherPage {
             LauncherPage::Skins(entity) => process(entity, window, cx),
             LauncherPage::Modrinth(entity) => process(entity, window, cx),
             LauncherPage::Curseforge(entity) => process(entity, window, cx),
+            LauncherPage::CombinedBrowse(entity) => process(entity, window, cx),
             LauncherPage::Import(entity) => process(entity, window, cx),
             LauncherPage::Syncing(entity) => process(entity, window, cx),
             LauncherPage::ModrinthProject(entity) => process(entity, window, cx),
@@ -280,6 +292,18 @@ impl LauncherUI {
                 Ok(LauncherPage::Curseforge(page))
 
             },
+            PageType::CombinedBrowse { installing_for } => {
+                let installing_for = installing_for.as_ref().map(|name| InstanceEntries::find_id_by_name(&data.instances, name, cx));
+
+                if let Some(None) = installing_for {
+                    return Err(PageType::CombinedBrowse { installing_for: None })
+                }
+
+                let page = cx.new(|cx| {
+                    CombinedSearchPage::new(installing_for.flatten(), data, window, cx)
+                });
+                Ok(LauncherPage::CombinedBrowse(page))
+            },
             PageType::Import => {
                 Ok(LauncherPage::Import(cx.new(|cx| ImportPage::new(data, window, cx))))
             },
@@ -421,6 +445,11 @@ impl Render for LauncherUI {
                 }))));
 
         let content_group = MenuGroup::new(t::instance::content::title())
+            .child(MenuGroupItem::new("Browse All")
+                .active(matches!(page_type, PageType::CombinedBrowse { installing_for: None }))
+                .on_click(cx.listener(|launcher, _, window, cx| {
+                    launcher.switch_page(PageType::CombinedBrowse { installing_for: None }, &[], window, cx);
+                })))
             .child(MenuGroupItem::new(t::modrinth::name())
                 .active(matches!(page_type, PageType::Modrinth { installing_for: None } | PageType::ModrinthProject { install_for: None, .. }))
                 .on_click(cx.listener(|launcher, _, window, cx| {
