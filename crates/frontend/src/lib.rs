@@ -42,6 +42,8 @@ pub mod ui;
 #[folder = "../../assets"]
 #[include = "icons/**/*.svg"]
 #[include = "images/**/*.png"]
+#[include = "images/**/*.jpg"]
+#[include = "images/**/*.jpeg"]
 #[include = "fonts/**/*.ttf"]
 pub struct Assets;
 
