@@ -1,6 +1,8 @@
 pub mod accounts;
 pub mod create_instance;
 pub mod curseforge_install;
+pub mod cats;
+pub mod credits;
 pub mod delete_instance;
 pub mod export_instance;
 pub mod generic;

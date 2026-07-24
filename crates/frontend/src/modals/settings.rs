@@ -13,7 +13,7 @@ use gpui_component::{
     sheet::Sheet,
     spinner::Spinner,
     tab::{Tab, TabBar},
-    v_flex, ActiveTheme, Colorize, Disableable, Sizable, ThemeRegistry,
+    v_flex, ActiveTheme, Colorize, Disableable, Sizable, ThemeRegistry, WindowExt,
 };
 use schema::backend_config::{BackendConfig, ProxyConfig, ProxyProtocol};
 
@@ -754,6 +754,24 @@ impl Settings {
                     .on_click(|value, _, cx| {
                         InterfaceConfig::get_mut(cx).hide_server_addresses = *value;
                     }))
+        ));
+
+        let div = div.child(crate::labelled(
+            "About",
+            h_flex()
+                .gap_2()
+                .child(Button::new("open-credits").info().icon(PandoraIcon::Award).label("Credits").on_click({
+                    move |_, window, cx| {
+                        let build = crate::modals::credits::build_credits_sheet(window, cx);
+                        window.open_sheet_at(gpui_component::Placement::Left, cx, build);
+                    }
+                }))
+                .child(Button::new("open-cats").ghost().icon(PandoraIcon::Cat).on_click({
+                    move |_, window, cx| {
+                        let build = crate::modals::cats::build_cats_sheet(window, cx);
+                        window.open_sheet_at(gpui_component::Placement::Left, cx, build);
+                    }
+                })),
         ));
 
         div
