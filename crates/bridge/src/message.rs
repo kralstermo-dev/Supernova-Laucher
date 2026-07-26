@@ -259,6 +259,9 @@ pub enum MessageToBackend {
     SetOpenGameOutputAfterLaunching {
         value: bool,
     },
+    SetDiscordRpcEnabled {
+        value: bool,
+    },
     SetProxyConfiguration {
         config: ProxyConfig,
         password: Option<String>,
