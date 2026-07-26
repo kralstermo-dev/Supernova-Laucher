@@ -10,7 +10,7 @@ use auth::{
     serve_redirect::{self, ProcessAuthorizationError},
 };
 use bridge::{
-    handle::{BackendHandle, BackendReceiver, FrontendHandle}, install::{ContentDownload, ContentInstall, ContentInstallFile, ContentInstallPath}, instance::{ContentFolder, ContentType, InstanceContentSummary, InstanceID, ModpackFile, ModpackFilePath, ModpackFileSource}, message::{EmbeddedOrRaw, MessageToFrontend}, modal_action::{ModalAction, ModalActionVisitUrl, ProgressTracker, ProgressTrackerFinishType}, quit::QuitCoordinator, safe_path::SafePath
+    handle::{BackendHandle, BackendReceiver, FrontendHandle}, install::{ContentDownload, ContentInstall, ContentInstallFile, ContentInstallPath}, instance::{ContentFolder, ContentType, InstanceContentSummary, InstanceID, InstanceStatus, ModpackFile, ModpackFilePath, ModpackFileSource}, message::{EmbeddedOrRaw, MessageToFrontend}, modal_action::{ModalAction, ModalActionVisitUrl, ProgressTracker, ProgressTrackerFinishType}, quit::QuitCoordinator, safe_path::SafePath
 };
 use image::ImageFormat;
 use indexmap::IndexSet;
@@ -123,6 +123,8 @@ pub fn start(runtime: tokio::runtime::Runtime, launcher_dir: PathBuf, send: Fron
     // Load accounts
     let account_info = Persistent::load(directories.accounts_json.clone());
 
+    let (discord_rpc, discord_rpc_task) = crate::discord_rpc::create();
+
     let state = BackendState {
         self_handle,
         send: send.clone(),
@@ -144,6 +146,7 @@ pub fn start(runtime: tokio::runtime::Runtime, launcher_dir: PathBuf, send: Fron
         quit_coordinator: quit_handler,
         should_quit: AtomicBool::new(false),
         content_install_semaphore: Semaphore::new(8),
+        discord_rpc,
     };
 
     log::debug!("Doing initial backend load");
@@ -153,6 +156,7 @@ pub fn start(runtime: tokio::runtime::Runtime, launcher_dir: PathBuf, send: Fron
         state.load_all_instances().await;
     });
 
+    runtime.spawn(discord_rpc_task);
     runtime.spawn(state.start(recv, watcher_rx));
 
     std::mem::forget(runtime);
@@ -205,6 +209,7 @@ pub struct BackendState {
     pub quit_coordinator: QuitCoordinator,
     pub should_quit: AtomicBool,
     pub content_install_semaphore: Semaphore,
+    pub discord_rpc: crate::discord_rpc::DiscordRpcHandle,
 }
 
 pub struct CachedMinecraftProfile {
@@ -503,6 +508,21 @@ impl BackendState {
 
             self.restore_mods_folder_if_stopped(instance);
             any_process_alive |= !instance.processes.is_empty() || !instance.closing_processes.is_empty();
+        }
+
+        if self.config.write().get().discord_rpc_enabled {
+            let playing = instance_state.instances.iter().find(|instance| instance.status() == InstanceStatus::Running);
+
+            let presence = match playing {
+                Some(instance) => crate::discord_rpc::DesiredPresence::Playing {
+                    instance_name: instance.name.to_string(),
+                    started_at_unix: instance.session_started_at_unix().unwrap_or_else(|| chrono::Utc::now().timestamp()),
+                },
+                None => crate::discord_rpc::DesiredPresence::Idle,
+            };
+            self.discord_rpc.set_presence(presence);
+        } else {
+            self.discord_rpc.set_presence(crate::discord_rpc::DesiredPresence::Cleared);
         }
 
         self.quit_coordinator.set_can_quit(!any_process_alive);

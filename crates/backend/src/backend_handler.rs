@@ -1411,6 +1411,11 @@ impl BackendState {
                     config.dont_open_game_output_when_launching = !value;
                 });
             },
+            MessageToBackend::SetDiscordRpcEnabled { value } => {
+                self.config.write().modify(|config| {
+                    config.discord_rpc_enabled = value;
+                });
+            },
             MessageToBackend::SetProxyConfiguration { config, password } => {
                 self.config.write().modify(|backend_config| {
                     backend_config.proxy = config;

@@ -928,6 +928,15 @@ impl Instance {
         self.session_started_at.is_some()
     }
 
+    /// The current play session's start time as a unix timestamp (seconds),
+    /// if one is active. Used for Discord Rich Presence's elapsed-time display.
+    pub fn session_started_at_unix(&self) -> Option<i64> {
+        let started_at = self.session_started_at?;
+        let elapsed_ms = started_at.elapsed().as_millis() as i64;
+        let now_ms = unix_time_ms_now()?;
+        Some((now_ms - elapsed_ms) / 1000)
+    }
+
     pub fn status(&self) -> InstanceStatus {
         if !self.processes.is_empty() {
             InstanceStatus::Running
