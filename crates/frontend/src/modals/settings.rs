@@ -711,6 +711,18 @@ impl Settings {
                                     settings.update_backend_configuration(window, cx);
                                 }
                             })))
+                        .child(Checkbox::new("discord-rpc")
+                            .label("Show what you're playing on Discord (Rich Presence)")
+                            .checked(backend_config.discord_rpc_enabled)
+                            .on_click(cx.listener({
+                                let backend_handle = self.backend_handle.clone();
+                                move |settings, value, window, cx| {
+                                    backend_handle.send(MessageToBackend::SetDiscordRpcEnabled {
+                                        value: *value
+                                    });
+                                    settings.update_backend_configuration(window, cx);
+                                }
+                            })))
                         .child(Checkbox::new("quit-on-main-close")
                             .label(t::settings::windows::close_all_when_main_closed())
                             .checked(interface_config.quit_on_main_closed)
