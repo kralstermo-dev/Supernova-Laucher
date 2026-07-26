@@ -52,6 +52,7 @@ jobs:
           PANDORA_UPDATE_PUBKEY: ${{ secrets.SIGNER_PUBLIC_KEY }}
           GITHUB_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
           PANDORA_DISTRIBUTION: official
+          DISCORD_RPC_CLIENT_ID: ${{ secrets.DISCORD_RPC_CLIENT_ID }}
         run: ${{ matrix.platform.buildscript }} ${{ github.ref_name }}
         shell: bash
 
